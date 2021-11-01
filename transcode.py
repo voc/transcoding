@@ -603,11 +603,17 @@ def output_h264(env, probed):
 # VP9
 ######
 
-def output_dash():
-    return f"""
-    
-"""
-
+def transcode_vp9(env, probed, hd_input="[hd_vp9]", sd_input="[sd_vp9]", use_vaapi=False):
+    res = []
+    if use_vaapi:
+        res += [encode_vp9_vaapi(hd_input, sd_input)]
+    else:
+        res += [encode_vp9_software(hd_input, sd_input)]
+    res += [
+        encode_vp9_audio(env, probed),
+        output_vp9(env, probed),
+    ]
+    return res
 
 def encode_vp9_vaapi(hd_input="[hd_vp9]", sd_input="[sd_vp9]"):
     return f"""
@@ -644,13 +650,6 @@ def encode_vp9_vaapi(hd_input="[hd_vp9]", sd_input="[sd_vp9]"):
             -g:v:2 15
             -b:v:2 100k
             -bufsize:v:2 750k
-
-    -c:a libopus -ac:a 2 -b:a 128k
-    -af "aresample=async=1:min_hard_comp=0.100000:first_pts=0"
-
-    -map '0:a:0' -metadata:s:a:0 title="Native"
-    -map '0:a:1?' -metadata:s:a:1 title="Translated"
-    -map '0:a:2?' -metadata:s:a:2 title="Translated-2"
 """
 
 
@@ -688,14 +687,69 @@ def encode_vp9_software(hd_input="[hd_vp9]", sd_input="[sd_vp9]"):
         -g:v:2 15
         -b:v:2 100k -maxrate:v:2 100k
         -bufsize:v:2 750k
-
-    -c:a libopus -ac:a 2 -b:a 128k
-    -af "aresample=async=1:min_hard_comp=0.100000:first_pts=0"
-
-    -map '0:a:0' -metadata:s:a:0 title="Native"
-    -map '0:a:1?' -metadata:s:a:1 title="Translated"
-    -map '0:a:2?' -metadata:s:a:2 title="Translated-2"
 """
+
+def _vp9_audio_track(track, in_index, map_index):
+    label = _audio_label(track, in_index)
+
+    rate = min(int(track.get("sample_rate", "48000")), 48000)
+    return f"""
+    -map 0:a:{in_index} -c:a:{map_index} libopus -ac:a:{map_index} 2 -b:a:{map_index} 192k -ar:a:{map_index} {rate}"""
+
+
+def encode_vp9_audio(env, probed):
+    res = ["-af 'aresample=async=1:min_hard_comp=0.100000:first_pts=0'"]
+    for index, track in enumerate(probed["audios"]):
+        res += [_h264_audio_track(track, index, index)]
+    return res
+
+def _calculate_dash_adaptation_sets(probed):
+    # Video Tracks
+    sets = [f"id={set_id},streams=v"]
+    set_id = 1
+    map_index = len(probed["videos"])
+
+    for i, track in enumerate(probed["audios"]):
+        sets += [f"id={set_id},streams={map_index}"]
+        set_id += 1
+        map_index += 1
+
+    return sets
+
+def output_vp9():
+    if env["output"] == "null":
+        return output_null()
+
+    # icecast matroska output for separate fanout
+    elif env["output"] == "icecast":
+        return output_matroska(env, f"{stream}_vpx")
+
+    # MPEG-DASH output
+    elif env["output"] == "direct":
+        user = env.get("upload_user")
+        password = env.get("upload_pass")
+        output = env.get("upload_sink")
+        auth = ""
+        auth_opt = ""
+        if user is not None and password is not None:
+            auth = f"{user}:{password}@"
+            auth_opt = "-auth_type basic"
+
+        adaptation_sets = _calculate_dash_adaptation_sets(probed)
+
+        return f"""
+	-f dash
+        -window_size 201 -extra_window_size 10
+        -seg_duration 3
+        -dash_segment_type webm
+        -init_seg_name 'init_$RepresentationID$.webm'
+        -media_seg_name 'segment_$RepresentationID$_$Number$.webm'
+        -adaptation_sets '{ adaptation_sets | join(" ") }'
+        { dash_write_path }}/{{ stream }}/manifest.mpd
+    """
+
+
+
 
 ######################
 # Thumbnails
