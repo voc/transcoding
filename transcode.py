@@ -745,7 +745,7 @@ def output_vp9():
         -init_seg_name 'init_$RepresentationID$.webm'
         -media_seg_name 'segment_$RepresentationID$_$Number$.webm'
         -adaptation_sets '{ adaptation_sets | join(" ") }'
-        { dash_write_path }}/{{ stream }}/manifest.mpd
+        {{ dash_write_path }}/{{ stream }}/manifest.mpd
     """
 
 
