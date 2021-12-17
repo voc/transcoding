@@ -209,10 +209,9 @@ def probe(source):
         return
 
     result = json.loads(buf.decode("utf-8"))
-    print("res", result)
     video_tracks = list(filter(lambda stream: stream['codec_type'] == "video", result['streams']))
     audio_tracks = list(filter(lambda stream: stream['codec_type'] == "audio", result['streams']))
-    
+
     has_audio = len(audio_tracks) > 0
     has_video = len(video_tracks) > 0
     main_video = None
@@ -515,7 +514,7 @@ def encode_h264_software(hd_input, sd_input):
         -metadata:s:v:2 title="Slides"
         -c:v:2 copy
     """
-    
+
 
 # Use passthrough for AAC streams, otherwise reencode to 2Ch AAC
 def _h264_audio_track(track, in_index, map_index):
@@ -560,7 +559,7 @@ def output_h264(env, probed):
     stream = env.get("stream")
     if env["output"] == "null":
         return output_null()
-    
+
     # icecast matroska output for separate fanout
     elif env["output"] == "icecast":
         return output_matroska(env, f"{stream}_h264"),
@@ -581,7 +580,7 @@ def output_h264(env, probed):
         for i in range(len(probed["videos"])+1):
             stream_map += [f"v:{i},a:{audio_idx},agroup:audio"]
             audio_idx += 1
-        
+
         for i in range(len(probed["audios"])-1):
             stream_map += [f"a:{audio_idx},agroup:audio"]
             audio_idx += 1
@@ -759,7 +758,7 @@ def transcode_thumbs(env, probed, poster_input="[poster]", thumb_input="[thumb]"
     codec = "-c:v mjpeg -pix_fmt:v yuvj420p"
     if use_vaapi:
         codec = "-c:v mjpeg_vaapi"
-    
+
     idx = 0
     res += [f"{codec} -map '{poster_input}' -metadata:s:v:{idx} title='Poster'"]
     idx += 1
@@ -770,7 +769,7 @@ def transcode_thumbs(env, probed, poster_input="[poster]", thumb_input="[thumb]"
     idx += 1
     if env["output"] == "direct":
         res += [output_thumbs_upload(env, "thumb.jpeg")]
-    
+
     if env["output"] == "icecast":
         stream = env.get("stream")
         res += [output_matroska(env, f"{stream}_thumbnail")]
@@ -841,7 +840,7 @@ def transcode_audio(env, probed):
             if env["output"] == "direct":
                 res += [output_audio(env, "aac")]
                 o = 0
-        
+
         if track.get("codec_name") == "opus":
             has_opus = True
             res += [f"""
