@@ -27,7 +27,6 @@ class Client():
         if self.enable:
             self.client.loop_stop()
             self.client.disconnect()
-        print("exit")
 
     def __handle_publish(self, client, userdata, mid):
         with self.cv:
@@ -53,7 +52,6 @@ class Client():
             if not self.cv.wait_for(sent_mid, timeout):
                 print("MQTT publish timeout")
                 return
-            print("success")
 
     def info(self, msg):
         print(msg)

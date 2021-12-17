@@ -1,4 +1,4 @@
-#!/usr/bin/env python3
+#!/usr/bin/env -S python3 -u
 import os
 import argparse
 import shlex
@@ -18,11 +18,15 @@ def main():
     env["source"] = os.getenv("transcoding_source")
     env["sink"] = os.getenv("transcoding_sink")
     env["type"] = os.getenv("type", "all")
+    env["output"] = os.getenv("output")
     env["vaapi_dev"], env["vaapi_driver"], env["vaapi_features"] = select_vaapi_dev()
     # env["icecast_password"] = config.icecast_password
-    env["upload_user"] = config.upload_user
-    env["upload_pass"] = config.upload_pass
-    env["upload_sink"] = config.upload_sink
+    if hasattr(config, "upload_user"):
+        env["upload_user"] = config.upload_user
+    if hasattr(config, "upload_pass"):
+        env["upload_pass"] = config.upload_pass
+    if hasattr(config, "sink"):
+        env["sink"] = config.sink
 
     parser = argparse.ArgumentParser(description="Transcode voc stream")
     parser.add_argument("--stream", help="stream key")
@@ -31,7 +35,7 @@ def main():
     parser.add_argument("--type", help="transcode type",
                         choices=["h264-only", "all"])
     parser.add_argument("-o", "--output", help="output type",
-                        default="icecast", choices=["icecast", "direct", "null"])
+                        choices=["icecast", "direct", "null"])
     parser.add_argument("-progress", help="pass to ffmpeg progress")
     parser.add_argument("--vaapi-features", action="append",
                         help="override vaapi features")
@@ -43,7 +47,9 @@ def main():
     args = parser.parse_args()
 
     # override environment with arguments
-    enable_mqtt = config.mqtt_enabled
+    enable_mqtt = False
+    if hasattr(config, "mqtt_enabled"):
+        enable_mqtt = config.mqtt_enabled
     check_arg(env, "output", args.output)
     if env["output"] == "null":
         enable_mqtt = False
@@ -86,7 +92,7 @@ def check_arg(env, key, flag):
     """Selectively overwrite environment variables if flag is set"""
     if flag is not None:
         env[key] = flag
-    if env[key] is None:
+    if key not in env:
         print(f"Param {key} must be set")
         sys.exit(1)
 
@@ -153,7 +159,7 @@ def signal_handler(signum, frame):
 
 
 def join_all(L):
-    return ' '.join([join_all(x) if type(x) is list else x for x in L])
+    return ' '.join([join_all(x) if (type(x) is list or type(x) is tuple) else x for x in L])
 
 
 def mainloop(env, do_restart, progress="", verbosity="warning"):
@@ -173,6 +179,8 @@ def mainloop(env, do_restart, progress="", verbosity="warning"):
         try:
             # probe to determine video settings
             probe_result = probe(env["source"])
+            if probe_result is None:
+                continue
 
             arguments = template_command(env, probe_result)
             arguments.insert(0, f"""/usr/bin/env ffmpeg -hide_banner {progress} -v {verbosity} -nostdin -y
@@ -192,11 +200,11 @@ def mainloop(env, do_restart, progress="", verbosity="warning"):
 
 # Probe source and determine codecs/stream-type
 def probe(source):
-    print("probe")
+    print("probing")
     try:
         cmd = f"ffprobe -v quiet -print_format json -show_format -show_streams {source}"
-        buf = subprocess.check_output(shlex.split(cmd))
-    except Exception as err:
+        buf = subprocess.check_output(shlex.split(cmd), timeout=30)
+    except subprocess.CalledProcessError as err:
         print("Probe failed", err)
         return
 
@@ -204,8 +212,6 @@ def probe(source):
     print("res", result)
     video_tracks = list(filter(lambda stream: stream['codec_type'] == "video", result['streams']))
     audio_tracks = list(filter(lambda stream: stream['codec_type'] == "audio", result['streams']))
-
-    print(list(video_tracks))
     
     has_audio = len(audio_tracks) > 0
     has_video = len(video_tracks) > 0
@@ -229,10 +235,6 @@ def probe(source):
         "audios": audio_tracks,
         "videos": video_tracks,
     }
-    # video_track_names = map(lambda stream: stream['tags']['title'], video_tracks)
-    # audio_track_names = map(lambda stream: stream['tags']['title'], audio_tracks)
-    # print("names {} {}".format(list(video_track_names), list(audio_track_names)))
-    # return list(set(video_track_names)), list(set(audio_track_names))
 
 
 def template_command(env, probed):
@@ -244,14 +246,16 @@ def template_command(env, probed):
         input_opts = "-f mpegts"
     env["input_tmpl"] = f"{input_opts} -i '{env['source']}'"
 
-# build command
-    if probed["audio_only"]:
+    # build command
+    if probed.get("audio_only"):
+        print("pipeline audio-only")
         return pipeline_audio_only(env, probed)
-    elif env["type"] == "h264-only":
+    elif env.get("type") == "h264-only":
+        print("pipeline h264-only")
         return pipeline_h264_only(env, probed)
     else:
+        print("pipeline all")
         return pipeline_all(env, probed)
-
 
 
 def random_duration():
@@ -284,7 +288,6 @@ def pipeline_audio_only(env, probed):
 
 def pipeline_all(env, probed):
     input_tmpl = env["input_tmpl"]
-    stream = env["stream"]
     vaapi_dev = env["vaapi_dev"]
     vaapi_features = env["vaapi_features"]
 
@@ -311,9 +314,8 @@ def pipeline_all(env, probed):
                 [_poster] scale_vaapi=w=288:h=-1 [thumb]"
             """,
             transcode_h264(env, probed, use_vaapi=True),
-            encode_vp9_vaapi(),
-            output(env, f"{stream}_vpx"),
-            transcode_thumbs(env, probed),
+            transcode_vp9(env, probed, use_vaapi=True),
+            transcode_thumbs(env, probed, use_vaapi=True),
             transcode_audio(env, probed),
         ]
 
@@ -334,9 +336,8 @@ def pipeline_all(env, probed):
                 [_poster] scale_vaapi=w=288:h=-1 [thumb]"
             """,
             transcode_h264(env, probed, use_vaapi=True),
-            encode_vp9_software(),
-            output_matroska(env, f"{stream}_vpx"),
-            transcode_thumbs(env, probed),
+            transcode_vp9(env, probed),
+            transcode_thumbs(env, probed, use_vaapi=True),
             transcode_audio(env, probed),
         ]
 
@@ -353,8 +354,7 @@ def pipeline_all(env, probed):
                 [_poster] scale=w=288:h=-1 [thumb]"
             """,
             transcode_h264(env, probed),
-            encode_vp9_software("0:v:0"),
-            output_matroska(env, f"{stream}_vpx"),
+            transcode_vp9(env, probed, hd_input="0:v:0"),
             transcode_thumbs(env, probed),
             transcode_audio(env, probed),
         ]
@@ -362,14 +362,12 @@ def pipeline_all(env, probed):
 
 def pipeline_h264_only(env, probed):
     input_tmpl = env["input_tmpl"]
-    stream = env["stream"]
     vaapi_dev = env["vaapi_dev"]
     vaapi_features = env["vaapi_features"]
 
-    print("vaaaapi", vaapi_features)
-
     # vaapi
     if "h264-enc" in vaapi_features and "jpeg-enc" in vaapi_features:
+        print("using vaapi transcode")
         return [
             f"""
             -init_hw_device vaapi=transcode:{vaapi_dev}
@@ -385,9 +383,8 @@ def pipeline_h264_only(env, probed):
                 [_poster] scale_vaapi=w=288:h=-1 [thumb]"
             """,
             transcode_h264(env, probed, use_vaapi=True),
-            transcode_thumbs(env, probed),
+            transcode_thumbs(env, probed, use_vaapi=True),
             transcode_audio(env, probed),
-            # output_matroska(env, f"{stream}_audio"),
         ]
     # software
     else:
@@ -403,7 +400,7 @@ def pipeline_h264_only(env, probed):
             """,
             transcode_h264(env, probed),
             transcode_thumbs(env, probed),
-            # transcode_audio(env, probed),
+            transcode_audio(env, probed),
         ]
 
 
@@ -572,7 +569,7 @@ def output_h264(env, probed):
     elif env["output"] == "direct":
         user = env.get("upload_user")
         password = env.get("upload_pass")
-        output = env.get("upload_sink")
+        output = env.get("sink")
         auth = ""
         auth_opt = ""
         if user is not None and password is not None:
@@ -700,15 +697,16 @@ def _vp9_audio_track(track, in_index, map_index):
 def encode_vp9_audio(env, probed):
     res = ["-af 'aresample=async=1:min_hard_comp=0.100000:first_pts=0'"]
     for index, track in enumerate(probed["audios"]):
-        res += [_h264_audio_track(track, index, index)]
+        res += [_vp9_audio_track(track, index, index)]
     return res
 
 def _calculate_dash_adaptation_sets(probed):
     # Video Tracks
-    sets = [f"id={set_id},streams=v"]
+    sets = [f"id=0,streams=v"]
     set_id = 1
-    map_index = len(probed["videos"])
+    map_index = len(probed["videos"])+1
 
+    # Audio Tracks
     for i, track in enumerate(probed["audios"]):
         sets += [f"id={set_id},streams={map_index}"]
         set_id += 1
@@ -716,7 +714,8 @@ def _calculate_dash_adaptation_sets(probed):
 
     return sets
 
-def output_vp9():
+def output_vp9(env, probed):
+    stream = env.get("stream")
     if env["output"] == "null":
         return output_null()
 
@@ -728,7 +727,7 @@ def output_vp9():
     elif env["output"] == "direct":
         user = env.get("upload_user")
         password = env.get("upload_pass")
-        output = env.get("upload_sink")
+        output = env.get("sink")
         auth = ""
         auth_opt = ""
         if user is not None and password is not None:
@@ -744,8 +743,8 @@ def output_vp9():
         -dash_segment_type webm
         -init_seg_name 'init_$RepresentationID$.webm'
         -media_seg_name 'segment_$RepresentationID$_$Number$.webm'
-        -adaptation_sets '{ adaptation_sets | join(" ") }'
-        {{ dash_write_path }}/{{ stream }}/manifest.mpd
+        -adaptation_sets '{" ".join(adaptation_sets)}'
+        http://{auth}{output}/dash/{stream}/manifest.mpd
     """
 
 
@@ -757,23 +756,23 @@ def output_vp9():
 
 def transcode_thumbs(env, probed, poster_input="[poster]", thumb_input="[thumb]", use_vaapi=False):
     res = []
+    codec = "-c:v mjpeg -pix_fmt:v yuvj420p"
     if use_vaapi:
-        res += ["-c:v mjpeg_vaapi"]
-    else:
-        res += ["-c:v mjpeg -pix_fmt:v yuvj420p"]
+        codec = "-c:v mjpeg_vaapi"
     
     idx = 0
-    res += [f"-map '{poster_input}' -metadata:s:v:{idx} title='Poster'"]
+    res += [f"{codec} -map '{poster_input}' -metadata:s:v:{idx} title='Poster'"]
     idx += 1
     if env["output"] == "direct":
         res += [output_thumbs_upload(env, "poster.jpeg")]
 
-    res += [f"-map '{thumb_input}' -metadata:s:v:{idx} title='Thumbnail'"]
+    res += [f"{codec} -map '{thumb_input}' -metadata:s:v:{idx} title='Thumbnail'"]
     idx += 1
     if env["output"] == "direct":
         res += [output_thumbs_upload(env, "thumb.jpeg")]
     
     if env["output"] == "icecast":
+        stream = env.get("stream")
         res += [output_matroska(env, f"{stream}_thumbnail")]
     elif env["output"] == "null":
         res += [output_null()]
@@ -784,7 +783,7 @@ def output_thumbs_upload(env, filename):
     stream = env.get("stream")
     user = env.get("upload_user")
     password = env.get("upload_pass")
-    output = env.get("upload_sink")
+    output = env.get("sink")
     auth = ""
     auth_opt = ""
     if user is not None and password is not None:
@@ -792,7 +791,7 @@ def output_thumbs_upload(env, filename):
         auth_opt = ":auth_type=basic"
     return f"""
     -f image2
-        -update 1 -protocol_opts method=PUT:multiple_requests=1:reconnect_on_network_error=1:reconnect_delay_max=5{auth_opt}
+        -update 1 -protocol_opts method=PUT:multiple_requests=1{auth_opt}
         'http://{auth}{output}/thumbnail/{stream}/{filename}'
     """
 
@@ -821,6 +820,10 @@ def output_audio(env, codec):
 
 def transcode_audio(env, probed):
     res = []
+
+    # no audio only for now
+    if env["output"] == "direct":
+        return res
 
     o = 0
     for (i, track) in enumerate(probed["audios"]):
@@ -875,7 +878,8 @@ def transcode_audio(env, probed):
                 o = 0
 
     if env["output"] == "icecast":
-        res += [output_matroska(env, "{stream}_audio")]
+        stream = env.get("stream")
+        res += [output_matroska(env, f"{stream}_audio")]
     elif env["output"] == "null":
         res += [output_null()]
 
