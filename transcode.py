@@ -424,7 +424,7 @@ def output_matroska(env, slug):
 """
 
 def _video_label(track, index):
-    if track is not None and "tags" in track and len(track["tags"].get("title")) > 0:
+    if track is not None and "tags" in track and len(track["tags"].get("title", "")) > 0:
         return track["tags"].get("title")
     if index == 0:
         return "HD"
@@ -436,7 +436,7 @@ def _video_label(track, index):
 
 
 def _audio_label(track, index):
-    if track is not None and "tags" in track and len(track["tags"].get("title")) > 0:
+    if track is not None and "tags" in track and len(track["tags"].get("title", "")) > 0:
         return track["tags"].get("title")
     if index == 0:
         return "Native"
