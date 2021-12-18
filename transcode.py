@@ -511,7 +511,7 @@ def encode_h264_software(hd_input, sd_input):
             -flags:v:1 +cgop
             -preset:v:1 veryfast
     -map '0:v:1?'
-        -metadata:s:v:2 title="Slides"
+        -metadata:s:v:2 comment="Slides"
         -c:v:2 copy
     """
 
@@ -578,7 +578,7 @@ def output_h264(env, probed):
         stream_map = []
         audio_idx = 0
         for i in range(len(probed["videos"])+1):
-            stream_map += [f"v:{i},a:{audio_idx},agroup:audio"]
+            stream_map += [f"v:{i},a:{audio_idx},agroup:audio,name:foo"]
             audio_idx += 1
 
         for i in range(len(probed["audios"])-1):
@@ -586,11 +586,11 @@ def output_h264(env, probed):
             audio_idx += 1
 
         return f"""
-        -f hls
+        -f hls -max_muxing_queue_size 400
             -http_persistent 1 -timeout 5 -ignore_io_errors 1
             -hls_flags delete_segments {auth_opt}
             -var_stream_map "{' '.join(stream_map)}"
-            -master_pl_name master.m3u8 -master_pl_publish_rate 10
+            -master_pl_name native_hd.m3u8 -master_pl_publish_rate 10
             -method PUT "http://{auth}{output}/hls/{stream}/out_%v.m3u8"
         """
 
@@ -736,7 +736,7 @@ def output_vp9(env, probed):
         adaptation_sets = _calculate_dash_adaptation_sets(probed)
 
         return f"""
-	-f dash
+	-f dash -max_muxing_queue_size 400
         -window_size 201 -extra_window_size 10
         -seg_duration 3
         -dash_segment_type webm
@@ -789,7 +789,7 @@ def output_thumbs_upload(env, filename):
         auth = f"{user}:{password}@"
         auth_opt = ":auth_type=basic"
     return f"""
-    -f image2
+    -f image2 -max_muxing_queue_size 400
         -update 1 -protocol_opts method=PUT:multiple_requests=1{auth_opt}
         'http://{auth}{output}/thumbnail/{stream}/{filename}'
     """
