@@ -180,6 +180,7 @@ def mainloop(env, do_restart, progress="", verbosity="warning"):
             # probe to determine video settings
             probe_result = probe(env["source"])
             if probe_result is None:
+                sleep_time = do_sleep(timer, sleep_time)
                 continue
 
             arguments = template_command(env, probe_result)
@@ -422,9 +423,20 @@ def output_matroska(env, slug):
     "icecast://{env["sink"]}/{slug}"
 """
 
+def _video_label(track, index):
+    if track is not None and "tags" in track and len(track["tags"].get("title")) > 0:
+        return track["tags"].get("title")
+    if index == 0:
+        return "HD"
+    if index == 1:
+        return "SD"
+    if index == 2:
+        return "Slides"
+    return "Unnamed"
+
 
 def _audio_label(track, index):
-    if "tags" in track and len(track["tags"].get("title")) > 0:
+    if track is not None and "tags" in track and len(track["tags"].get("title")) > 0:
         return track["tags"].get("title")
     if index == 0:
         return "Native"
@@ -544,7 +556,7 @@ def encode_h264_audio(env, probed):
             map_index += 1
 
         # mux alternate audios
-        for in_index, track in enumerate(probed["audios"][1:], 1):
+        for in_index, track in enumerate(probed["audios"]):
             res += [_h264_audio_track(track, in_index, map_index)]
             map_index += 1
 
@@ -578,11 +590,16 @@ def output_h264(env, probed):
         stream_map = []
         audio_idx = 0
         for i in range(len(probed["videos"])+1):
-            stream_map += [f"v:{i},a:{audio_idx},agroup:audio,name:foo"]
+            label = _video_label(None, i)
+            stream_map += [f"v:{i},a:{audio_idx},agroup:main,name:{label}"]
             audio_idx += 1
 
-        for i in range(len(probed["audios"])-1):
-            stream_map += [f"a:{audio_idx},agroup:audio"]
+        for i in range(len(probed["audios"])):
+            label = _audio_label(None, i)
+            default = ""
+            if i == 0:
+                default = ",default:yes"
+            stream_map += [f"a:{audio_idx},agroup:main,name:{label},language:{label}{default}"]
             audio_idx += 1
 
         return f"""
@@ -591,7 +608,7 @@ def output_h264(env, probed):
             -hls_flags delete_segments {auth_opt}
             -var_stream_map "{' '.join(stream_map)}"
             -master_pl_name native_hd.m3u8 -master_pl_publish_rate 10
-            -method PUT "http://{auth}{output}/hls/{stream}/out_%v.m3u8"
+            -method PUT "http://{auth}{output}/hls/{stream}/segment_%v.m3u8"
         """
 
 
