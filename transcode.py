@@ -410,13 +410,13 @@ def pipeline_h264_only(env, probed):
 
 
 def output_null(env=None, slug=None):
-    return "-max_muxing_queue_size 400 -f null -"
+    return "-max_muxing_queue_size 2000 -f null -"
 
 
 def output_matroska(env, slug):
     return f"""
     -fflags +genpts
-    -max_muxing_queue_size 400
+    -max_muxing_queue_size 2000
     -f matroska
     -password {config.icecast_password}
     -content_type video/webm
@@ -603,7 +603,7 @@ def output_h264(env, probed):
             audio_idx += 1
 
         return f"""
-        -f hls -max_muxing_queue_size 400
+        -f hls -max_muxing_queue_size 2000
             -http_persistent 1 -timeout 5 -ignore_io_errors 1
             -hls_flags delete_segments {auth_opt}
             -hls_time 3
@@ -754,7 +754,7 @@ def output_vp9(env, probed):
         adaptation_sets = _calculate_dash_adaptation_sets(probed)
 
         return f"""
-	-f dash -max_muxing_queue_size 400
+	-f dash -max_muxing_queue_size 2000
         -window_size 201 -extra_window_size 10
         -seg_duration 3
         -dash_segment_type webm
@@ -807,7 +807,7 @@ def output_thumbs_upload(env, filename):
         auth = f"{user}:{password}@"
         auth_opt = ":auth_type=basic"
     return f"""
-    -f image2 -max_muxing_queue_size 400
+    -f image2 -max_muxing_queue_size 2000
         -update 1 -protocol_opts method=PUT:multiple_requests=1{auth_opt}
         'http://{auth}{output}/thumbnail/{stream}/{filename}'
     """
