@@ -606,7 +606,7 @@ def output_h264(env, probed):
         -f hls -max_muxing_queue_size 2000
             -http_persistent 1 -timeout 5 -ignore_io_errors 1
             -hls_flags delete_segments {auth_opt}
-            -hls_time 3
+            -hls_time 3 -hls_list_size 200
             -var_stream_map "{' '.join(stream_map)}"
             -master_pl_name native_hd.m3u8 -master_pl_publish_rate 10
             -method PUT "http://{auth}{output}/hls/{stream}/segment_%v.m3u8"
