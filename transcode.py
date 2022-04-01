@@ -19,6 +19,7 @@ def main():
     env["sink"] = os.getenv("transcoding_sink")
     env["type"] = os.getenv("type", "all")
     env["output"] = os.getenv("output")
+    env["passthrough"] = os.getenv("passthrough", "no") == "yes"
     env["vaapi_dev"], env["vaapi_driver"], env["vaapi_features"] = select_vaapi_dev()
     # env["icecast_password"] = config.icecast_password
     if hasattr(config, "upload_user"):
@@ -455,9 +456,9 @@ def _audio_label(track, index):
 def transcode_h264(env, probed, hd_input="0:v:0", sd_input="[sd_h264]", use_vaapi=False):
     res = []
     if use_vaapi:
-        res += [encode_h264_vaapi(hd_input, sd_input)]
+        res += [encode_h264_vaapi(hd_input, sd_input, hd_passthrough=env["passthrough"])]
     else:
-        res += [encode_h264_software(hd_input, sd_input)]
+        res += [encode_h264_software(hd_input, sd_input, hd_passthrough=env["passthrough"])]
     res += [
         encode_h264_audio(env, probed),
         output_h264(env, probed),
@@ -465,18 +466,29 @@ def transcode_h264(env, probed, hd_input="0:v:0", sd_input="[sd_h264]", use_vaap
     return res
 
 
-def encode_h264_vaapi(hd_input, sd_input):
-    return f"""
-    -map '{hd_input}'
-        -metadata:s:v:0 title="HD"
-        -c:v:0 h264_vaapi
-            -r:v:0 25
-            -keyint_min:v:0 75
-            -g:v:0 75
-            -b:v:0 2800k
-            -bufsize:v:0 8400k
-            -flags:v:0 +cgop
+def encode_h264_vaapi(hd_input, sd_input, hd_passthrough):
+    if hd_passthrough:
+        snippet = f"""
+        -map '{hd_input}'
+            -metadata:s:v:0 title="HD"
+            -c:v:0 copy
+                -b:v:0 8000k
+                -bsf:v:0 h264_mp4toannexb
+        """
+    else:
+        snippet = f"""
+        -map '{hd_input}'
+            -metadata:s:v:0 title="HD"
+            -c:v:0 h264_vaapi
+                -r:v:0 25
+                -keyint_min:v:0 75
+                -g:v:0 75
+                -b:v:0 2800k
+                -bufsize:v:0 8400k
+                -flags:v:0 +cgop
+        """
 
+    snippet += f"""
     -map '{sd_input}'
         -metadata:s:v:1 title="SD"
         -c:v:1 h264_vaapi
@@ -490,25 +502,37 @@ def encode_h264_vaapi(hd_input, sd_input):
     -map '0:v:1?'
         -metadata:s:v:2 title="Slides"
         -c:v:2 copy
-"""
+    """
 
+    return snippet
 
-def encode_h264_software(hd_input, sd_input):
-    return f"""
-    -map '{hd_input}'
-        -metadata:s:v:0 title="HD"
-        -c:v:0 libx264
-            -maxrate:v:0 2800k
-            -crf:v:0 21
-            -bufsize:v:0 5600k
-            -pix_fmt:v:0 yuv420p
-            -profile:v:0 main
-            -r:v:0 25
-            -keyint_min:v:0 75
-            -g:v:0 75
-            -flags:v:0 +cgop
-            -preset:v:0 veryfast
+def encode_h264_software(hd_input, sd_input, hd_passthrough=False):
+    if hd_passthrough:
+        snippet = f"""
+        -map '{hd_input}'
+            -metadata:s:v:0 title="HD"
+            -c:v:0 copy
+                -b:v:0 8000k
+                -bsf:v:0 h264_mp4toannexb
+        """
+    else:
+        snippet = f"""
+        -map '{hd_input}'
+            -metadata:s:v:0 title="HD"
+            -c:v:0 libx264
+                -maxrate:v:0 2800k
+                -crf:v:0 21
+                -bufsize:v:0 5600k
+                -pix_fmt:v:0 yuv420p
+                -profile:v:0 main
+                -r:v:0 25
+                -keyint_min:v:0 75
+                -g:v:0 75
+                -flags:v:0 +cgop
+                -preset:v:0 veryfast
+        """
 
+    snippet += """
     -map '{sd_input}'
         -metadata:s:v:1 title="SD"
         -c:v:1 libx264
@@ -526,6 +550,8 @@ def encode_h264_software(hd_input, sd_input):
         -metadata:s:v:2 comment="Slides"
         -c:v:2 copy
     """
+
+    return snippet
 
 
 # Use passthrough for AAC streams, otherwise reencode to 2Ch AAC
