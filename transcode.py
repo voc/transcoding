@@ -81,7 +81,7 @@ def main():
     os.environ.update(env_vars)
 
     with mqtt.Client(enable_mqtt) as client:
-        client.info(f"Transcoding for {env['stream']} started…")
+        client.info(f"Transcoding for {env['stream']}%sstarted…" % (" (passthrough) " if env["passthrough"] else " "))
         try:
             mainloop(env, args.restart, progress, args.verbose)
         except ExitException:
