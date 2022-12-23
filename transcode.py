@@ -532,7 +532,7 @@ def encode_h264_software(hd_input, sd_input, hd_passthrough=False):
                 -preset:v:0 veryfast
         """
 
-    snippet += """
+    snippet += f"""
     -map '{sd_input}'
         -metadata:s:v:1 title="SD"
         -c:v:1 libx264
