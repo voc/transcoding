@@ -21,6 +21,7 @@ def main():
     env["output"] = os.getenv("output")
     env["passthrough"] = os.getenv("passthrough", "no") == "yes"
     env["restream"] = os.getenv("restream", "none")
+    env["framerate"] = os.getenv("framerate", 25)
     env["vaapi_dev"], env["vaapi_driver"], env["vaapi_features"] = select_vaapi_dev()
     # env["icecast_password"] = config.icecast_password
     if hasattr(config, "upload_user"):
@@ -459,9 +460,9 @@ def _audio_label(track, index):
 def transcode_h264(env, probed, hd_input="0:v:0", sd_input="[sd_h264]", use_vaapi=False):
     res = []
     if use_vaapi:
-        res += [encode_h264_vaapi(hd_input, sd_input, hd_passthrough=env["passthrough"])]
+        res += [encode_h264_vaapi(hd_input, sd_input, hd_passthrough=env["passthrough"], framerate=env["framerate"])]
     else:
-        res += [encode_h264_software(hd_input, sd_input, hd_passthrough=env["passthrough"])]
+        res += [encode_h264_software(hd_input, sd_input, hd_passthrough=env["passthrough"], framerate=env["framerate"])]
     res += [
         encode_h264_audio(env, probed),
         output_h264(env, probed),
@@ -477,12 +478,12 @@ def transcode_h264(env, probed, hd_input="0:v:0", sd_input="[sd_h264]", use_vaap
     return res
 
 
-def encode_h264_vaapi(hd_input, sd_input, hd_passthrough):
+def encode_h264_vaapi(hd_input, sd_input, hd_passthrough, framerate):
     snippet = f"""
     -map '{hd_input}'
         -metadata:s:v:0 title="HD"
         -c:v:0 h264_vaapi
-            -r:v:0 25
+            -r:v:0 {framerate}
             -keyint_min:v:0 75
             -g:v:0 75
             -b:v:0 2800k
@@ -494,7 +495,7 @@ def encode_h264_vaapi(hd_input, sd_input, hd_passthrough):
     -map '{sd_input}'
         -metadata:s:v:1 title="SD"
         -c:v:1 h264_vaapi
-            -r:v:1 25
+            -r:v:1 {framerate}
             -keyint_min:v:1 75
             -g:v:1 75
             -b:v:1 800k
@@ -523,7 +524,7 @@ def encode_h264_vaapi(hd_input, sd_input, hd_passthrough):
 
     return snippet
 
-def encode_h264_software(hd_input, sd_input, hd_passthrough=False):
+def encode_h264_software(hd_input, sd_input, framerate, hd_passthrough=False):
     snippet = f"""
     -map '{hd_input}'
         -metadata:s:v:0 title="HD"
@@ -533,7 +534,7 @@ def encode_h264_software(hd_input, sd_input, hd_passthrough=False):
             -bufsize:v:0 5600k
             -pix_fmt:v:0 yuv420p
             -profile:v:0 main
-            -r:v:0 25
+            -r:v:0 {framerate}
             -keyint_min:v:0 75
             -g:v:0 75
             -flags:v:0 +cgop
@@ -549,7 +550,7 @@ def encode_h264_software(hd_input, sd_input, hd_passthrough=False):
             -bufsize:v:1 3600k
             -pix_fmt:v:1 yuv420p
             -profile:v:1 main
-            -r:v:1 25
+            -r:v:1 {framerate}
             -keyint_min:v:1 75
             -g:v:1 75
             -flags:v:1 +cgop
