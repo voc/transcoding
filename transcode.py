@@ -584,8 +584,8 @@ def encode_restream_vaapi(hd_input):
     -map '{hd_input}'
         -keyint_min:v 75
         -g:v 75
-        -b:v 4000k
-        -bufsize:v 8400k
+        -b:v 6000k
+        -bufsize:v 12800k
         -flags:v +cgop
     """
 
@@ -593,9 +593,9 @@ def encode_restream_software(hd_input):
     return f"""
     -c:v libx264
     -map '{hd_input}'
-        -maxrate:v 4000k
+        -maxrate:v 6000k
         -crf:v 21
-        -bufsize:v 8400k
+        -bufsize:v 12800k
         -pix_fmt:v yuv420p
         -profile:v main
         -keyint_min:v 75
