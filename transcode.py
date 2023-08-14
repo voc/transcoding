@@ -689,11 +689,13 @@ def output_h264(env, probed):
         return f"""
         -f hls -max_muxing_queue_size 2000
             -http_persistent 1 -timeout 5 -ignore_io_errors 1
-            -hls_flags delete_segments {auth_opt}
+            -hls_flags delete_segments+second_level_segment_index {auth_opt}
             -hls_time 3 -hls_list_size 200
             -var_stream_map "{' '.join(stream_map)}"
+            -strftime 1
+            -hls_segment_filename "http://{auth}{output}/hls/{stream}/%v_%s_%%04d.ts"
             -master_pl_name native_hd.m3u8 -master_pl_publish_rate 10
-            -method PUT "http://{auth}{output}/hls/{stream}/segment_%v.m3u8"
+            -method PUT "http://{auth}{output}/hls/{stream}/%v.m3u8"
         """
 
 def output_restream(env, probed):
