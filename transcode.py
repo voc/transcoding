@@ -460,9 +460,9 @@ def _audio_label(track, index):
 def transcode_h264(env, probed, hd_input="0:v:0", sd_input="[sd_h264]", use_vaapi=False):
     res = []
     if use_vaapi:
-        res += [encode_h264_vaapi(hd_input, sd_input, hd_passthrough=env["passthrough"], framerate=env["framerate"])]
+        res += [encode_h264_vaapi(hd_input, sd_input, hd_passthrough=env["passthrough"], framerate=env["framerate"], codec=probed["main_video"]["codec_name"])]
     else:
-        res += [encode_h264_software(hd_input, sd_input, hd_passthrough=env["passthrough"], framerate=env["framerate"])]
+        res += [encode_h264_software(hd_input, sd_input, hd_passthrough=env["passthrough"], framerate=env["framerate"], codec=probed["main_video"]["codec_name"])]
     res += [
         encode_h264_audio(env, probed),
         output_h264(env, probed),
@@ -478,7 +478,7 @@ def transcode_h264(env, probed, hd_input="0:v:0", sd_input="[sd_h264]", use_vaap
     return res
 
 
-def encode_h264_vaapi(hd_input, sd_input, hd_passthrough, framerate):
+def encode_h264_vaapi(hd_input, sd_input, hd_passthrough, framerate, codec):
     snippet = f"""
     -map '{hd_input}'
         -metadata:s:v:0 title="HD"
@@ -509,8 +509,16 @@ def encode_h264_vaapi(hd_input, sd_input, hd_passthrough, framerate):
             -metadata:s:v:2 title="Source"
             -c:v:2 copy
                 -b:v:2 8000k
-                -bsf:v:2 h264_mp4toannexb
-
+        """
+        if codec == "h264":
+            snippet += """
+            -bsf:v:2 h264_mp4toannexb
+            """
+        elif codec == "h265":
+            snippet += """
+            -bsf:v:2 hevc_mp4toannexb
+            """
+        snippet += """
         -map '0:v:1?'
             -metadata:s:v:3 title="Slides"
             -c:v:3 copy
@@ -524,7 +532,7 @@ def encode_h264_vaapi(hd_input, sd_input, hd_passthrough, framerate):
 
     return snippet
 
-def encode_h264_software(hd_input, sd_input, framerate, hd_passthrough=False):
+def encode_h264_software(hd_input, sd_input, framerate, codec, hd_passthrough=False):
     snippet = f"""
     -map '{hd_input}'
         -metadata:s:v:0 title="HD"
@@ -563,8 +571,16 @@ def encode_h264_software(hd_input, sd_input, framerate, hd_passthrough=False):
             -metadata:s:v:2 title="Source"
             -c:v:2 copy
                 -b:v:2 8000k
-                -bsf:v:2 h264_mp4toannexb
-
+        """
+        if codec == "h264":
+            snippet += """
+            -bsf:v:2 h264_mp4toannexb
+            """
+        elif codec == "h265":
+            snippet += """
+            -bsf:v:2 hevc_mp4toannexb
+            """
+        snippet += """
         -map '0:v:1?'
             -metadata:s:v:3 title="Slides"
             -c:v:3 copy
