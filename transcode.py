@@ -12,6 +12,7 @@ import json
 import mqtt
 import config
 
+
 def main():
     env = dict()
     env["stream"] = os.getenv("stream_key")
@@ -35,18 +36,19 @@ def main():
     parser.add_argument("--stream", help="stream key")
     parser.add_argument("--source", help="transcoding input")
     parser.add_argument("--sink", help="transcoding sink host")
-    parser.add_argument("--type", help="transcode type",
-                        choices=["h264-only", "all"])
-    parser.add_argument("-o", "--output", help="output type",
-                        choices=["icecast", "direct", "null"])
+    parser.add_argument("--type", help="transcode type", choices=["h264-only", "all"])
+    parser.add_argument(
+        "-o", "--output", help="output type", choices=["icecast", "direct", "null"]
+    )
     parser.add_argument("-progress", help="pass to ffmpeg progress")
-    parser.add_argument("--vaapi-features", action="append",
-                        help="override vaapi features")
+    parser.add_argument(
+        "--vaapi-features", action="append", help="override vaapi features"
+    )
     parser.add_argument("--vaapi-device", help="override vaapi device")
-    parser.add_argument("-v", "--verbose", help="set verbosity",
-                        default="warning")
-    parser.add_argument("--restart", help="restart on failure",
-                        default=False, action="store_true")
+    parser.add_argument("-v", "--verbose", help="set verbosity", default="warning")
+    parser.add_argument(
+        "--restart", help="restart on failure", default=False, action="store_true"
+    )
     args = parser.parse_args()
 
     # override environment with arguments
@@ -83,7 +85,10 @@ def main():
     os.environ.update(env_vars)
 
     with mqtt.Client(enable_mqtt) as client:
-        client.info(f"Transcoding for {env['stream']}%sstarted…" % (" (passthrough) " if env["passthrough"] else " "))
+        client.info(
+            f"Transcoding for {env['stream']}%sstarted…"
+            % (" (passthrough) " if env["passthrough"] else " ")
+        )
         try:
             mainloop(env, args.restart, progress, args.verbose)
         except ExitException:
@@ -110,8 +115,14 @@ def parse_vainfo(driver: str, device: str):
     env_vars = {"LIBVA_DRIVER_NAME": driver}
     os.environ.update(env_vars)
     try:
-        vainfo = subprocess.check_output(["vainfo", "--display", "drm", "--device", device],
-                                         stderr=subprocess.DEVNULL).decode().split("\n")
+        vainfo = (
+            subprocess.check_output(
+                ["vainfo", "--display", "drm", "--device", device],
+                stderr=subprocess.DEVNULL,
+            )
+            .decode()
+            .split("\n")
+        )
     except subprocess.CalledProcessError:
         return []
     except FileNotFoundError:
@@ -162,7 +173,9 @@ def signal_handler(signum, frame):
 
 
 def join_all(L):
-    return ' '.join([join_all(x) if (type(x) is list or type(x) is tuple) else x for x in L])
+    return " ".join(
+        [join_all(x) if (type(x) is list or type(x) is tuple) else x for x in L]
+    )
 
 
 def mainloop(env, do_restart, progress="", verbosity="warning"):
@@ -187,8 +200,11 @@ def mainloop(env, do_restart, progress="", verbosity="warning"):
                 continue
 
             arguments = template_command(env, probe_result)
-            arguments.insert(0, f"""/usr/bin/env ffmpeg -hide_banner {progress} -v {verbosity} -nostdin -y
-                """)
+            arguments.insert(
+                0,
+                f"""/usr/bin/env ffmpeg -hide_banner {progress} -v {verbosity} -nostdin -y
+                """,
+            )
             print("execute\n", join_all(arguments).replace("\n", " \\\n"))
             call = shlex.split(join_all(arguments))
 
@@ -202,6 +218,7 @@ def mainloop(env, do_restart, progress="", verbosity="warning"):
 
         sleep_time = do_sleep(timer, sleep_time)
 
+
 # Probe source and determine codecs/stream-type
 def probe(source):
     print("probing")
@@ -213,8 +230,12 @@ def probe(source):
         return
 
     result = json.loads(buf.decode("utf-8"))
-    video_tracks = list(filter(lambda stream: stream['codec_type'] == "video", result['streams']))
-    audio_tracks = list(filter(lambda stream: stream['codec_type'] == "audio", result['streams']))
+    video_tracks = list(
+        filter(lambda stream: stream["codec_type"] == "video", result["streams"])
+    )
+    audio_tracks = list(
+        filter(lambda stream: stream["codec_type"] == "audio", result["streams"])
+    )
 
     has_audio = len(audio_tracks) > 0
     has_video = len(video_tracks) > 0
@@ -280,6 +301,7 @@ def do_sleep(timer, sleep_time):
 # Transcoding Pipelines
 ########################
 
+
 def pipeline_audio_only(env, probed):
     input_tmpl = env["input_tmpl"]
     stream = env["stream"]
@@ -288,6 +310,7 @@ def pipeline_audio_only(env, probed):
         f"{input_tmpl}",
         transcode_audio(env, probed),
     ]
+
 
 def pipeline_all(env, probed):
     input_tmpl = env["input_tmpl"]
@@ -426,8 +449,13 @@ def output_matroska(env, slug):
     "icecast://{env["sink"]}/{slug}"
 """
 
+
 def _video_label(track, index, passthrough):
-    if track is not None and "tags" in track and len(track["tags"].get("title", "")) > 0:
+    if (
+        track is not None
+        and "tags" in track
+        and len(track["tags"].get("title", "")) > 0
+    ):
         return track["tags"].get("title")
     if index == 0:
         return "HD"
@@ -441,7 +469,11 @@ def _video_label(track, index, passthrough):
 
 
 def _audio_label(track, index):
-    if track is not None and "tags" in track and len(track["tags"].get("title", "")) > 0:
+    if (
+        track is not None
+        and "tags" in track
+        and len(track["tags"].get("title", "")) > 0
+    ):
         return track["tags"].get("title")
     if index == 0:
         return "Native"
@@ -454,15 +486,34 @@ def _audio_label(track, index):
 # Codecs
 ############################
 
+
 #######
 # h264
 #######
-def transcode_h264(env, probed, hd_input="0:v:0", sd_input="[sd_h264]", use_vaapi=False):
+def transcode_h264(
+    env, probed, hd_input="0:v:0", sd_input="[sd_h264]", use_vaapi=False
+):
     res = []
     if use_vaapi:
-        res += [encode_h264_vaapi(hd_input, sd_input, hd_passthrough=env["passthrough"], framerate=env["framerate"], codec=probed["main_video"]["codec_name"])]
+        res += [
+            encode_h264_vaapi(
+                hd_input,
+                sd_input,
+                hd_passthrough=env["passthrough"],
+                framerate=env["framerate"],
+                codec=probed["main_video"]["codec_name"],
+            )
+        ]
     else:
-        res += [encode_h264_software(hd_input, sd_input, hd_passthrough=env["passthrough"], framerate=env["framerate"], codec=probed["main_video"]["codec_name"])]
+        res += [
+            encode_h264_software(
+                hd_input,
+                sd_input,
+                hd_passthrough=env["passthrough"],
+                framerate=env["framerate"],
+                codec=probed["main_video"]["codec_name"],
+            )
+        ]
     res += [
         encode_h264_audio(env, probed),
         output_h264(env, probed),
@@ -532,6 +583,7 @@ def encode_h264_vaapi(hd_input, sd_input, hd_passthrough, framerate, codec):
 
     return snippet
 
+
 def encode_h264_software(hd_input, sd_input, framerate, codec, hd_passthrough=False):
     snippet = f"""
     -map '{hd_input}'
@@ -594,6 +646,7 @@ def encode_h264_software(hd_input, sd_input, framerate, codec, hd_passthrough=Fa
 
     return snippet
 
+
 def encode_restream_vaapi(hd_input):
     return f"""
     -c:v h264_vaapi
@@ -604,6 +657,7 @@ def encode_restream_vaapi(hd_input):
         -bufsize:v 12800k
         -flags:v +cgop
     """
+
 
 def encode_restream_software(hd_input):
     return f"""
@@ -624,7 +678,11 @@ def encode_restream_software(hd_input):
 # Use passthrough for AAC streams, otherwise reencode to 2Ch AAC
 def _h264_audio_track(track, in_index, map_index):
     label = _audio_label(track, in_index)
-    if track.get("codec_name") == "aac" and track.get("profile") == "LC" and track.get("channels") == 2:
+    if (
+        track.get("codec_name") == "aac"
+        and track.get("profile") == "LC"
+        and track.get("channels") == 2
+    ):
         return f"""
     -map 0:a:{in_index} -c:a:{map_index} copy"""
 
@@ -639,7 +697,7 @@ def encode_h264_audio(env, probed):
     # mux variants for hls output
     if env["output"] == "direct":
         # mux
-        numVideos = len(probed["videos"]) + 1 # orig HD, orig slides + transcoded SD
+        numVideos = len(probed["videos"]) + 1  # orig HD, orig slides + transcoded SD
 
         # mux native once for every video
         map_index = 0
@@ -669,7 +727,7 @@ def output_h264(env, probed):
 
     # icecast matroska output for separate fanout
     elif env["output"] == "icecast":
-        return output_matroska(env, f"{stream}_h264"),
+        return (output_matroska(env, f"{stream}_h264"),)
 
     # hls output
     elif env["output"] == "direct":
@@ -685,7 +743,7 @@ def output_h264(env, probed):
         stream_map = []
         audio_idx = 0
 
-        numVideos = len(probed["videos"]) + 1 # orig HD, orig slides + transcoded SD
+        numVideos = len(probed["videos"]) + 1  # orig HD, orig slides + transcoded SD
 
         if env["passthrough"]:
             numVideos += 1
@@ -699,7 +757,9 @@ def output_h264(env, probed):
             default = ""
             if i == 0:
                 default = ",default:yes"
-            stream_map += [f"a:{audio_idx},agroup:main,name:{label},language:{label}{default}"]
+            stream_map += [
+                f"a:{audio_idx},agroup:main,name:{label},language:{label}{default}"
+            ]
             audio_idx += 1
 
         return f"""
@@ -714,6 +774,7 @@ def output_h264(env, probed):
             -method PUT "http://{auth}{output}/hls/{stream}/%v.m3u8"
         """
 
+
 def output_restream(env, probed):
     if env["restream"].startswith("rtmp://"):
         return f"""
@@ -721,11 +782,15 @@ def output_restream(env, probed):
         -f flv {env['restream']}
         """
 
+
 ######
 # VP9
 ######
 
-def transcode_vp9(env, probed, hd_input="[hd_vp9]", sd_input="[sd_vp9]", use_vaapi=False):
+
+def transcode_vp9(
+    env, probed, hd_input="[hd_vp9]", sd_input="[sd_vp9]", use_vaapi=False
+):
     res = []
     if use_vaapi:
         res += [encode_vp9_vaapi(hd_input, sd_input)]
@@ -736,6 +801,7 @@ def transcode_vp9(env, probed, hd_input="[hd_vp9]", sd_input="[sd_vp9]", use_vaa
         output_vp9(env, probed),
     ]
     return res
+
 
 def encode_vp9_vaapi(hd_input="[hd_vp9]", sd_input="[sd_vp9]"):
     return f"""
@@ -811,6 +877,7 @@ def encode_vp9_software(hd_input="[hd_vp9]", sd_input="[sd_vp9]"):
         -bufsize:v:2 750k
 """
 
+
 def _vp9_audio_track(track, in_index, map_index):
     label = _audio_label(track, in_index)
 
@@ -825,11 +892,12 @@ def encode_vp9_audio(env, probed):
         res += [_vp9_audio_track(track, index, index)]
     return res
 
+
 def _calculate_dash_adaptation_sets(probed):
     # Video Tracks
     sets = [f"id=0,streams=v"]
     set_id = 1
-    map_index = len(probed["videos"])+1
+    map_index = len(probed["videos"]) + 1
 
     # Audio Tracks
     for i, track in enumerate(probed["audios"]):
@@ -838,6 +906,7 @@ def _calculate_dash_adaptation_sets(probed):
         map_index += 1
 
     return sets
+
 
 def output_vp9(env, probed):
     stream = env.get("stream")
@@ -873,13 +942,14 @@ def output_vp9(env, probed):
     """
 
 
-
-
 ######################
 # Thumbnails
 ######################
 
-def transcode_thumbs(env, probed, poster_input="[poster]", thumb_input="[thumb]", use_vaapi=False):
+
+def transcode_thumbs(
+    env, probed, poster_input="[poster]", thumb_input="[thumb]", use_vaapi=False
+):
     res = []
     codec = "-c:v mjpeg -pix_fmt:v yuvj420p"
     if use_vaapi:
@@ -904,6 +974,7 @@ def transcode_thumbs(env, probed, poster_input="[poster]", thumb_input="[thumb]"
 
     return res
 
+
 def output_thumbs_upload(env, filename):
     stream = env.get("stream")
     user = env.get("upload_user")
@@ -925,6 +996,7 @@ def output_thumbs_upload(env, filename):
 # Audio only formats
 ######################
 
+
 def output_audio(env, codec):
     stream = env["stream"]
     content_type = "audio/ogg"
@@ -943,6 +1015,7 @@ def output_audio(env, codec):
         "icecast://{env["sink"]}/{stream}.{ext}"
     """
 
+
 def transcode_audio(env, probed):
     res = []
 
@@ -951,17 +1024,19 @@ def transcode_audio(env, probed):
         return res
 
     o = 0
-    for (i, track) in enumerate(probed["audios"]):
+    for i, track in enumerate(probed["audios"]):
         has_aac = False
         has_opus = False
         title = _audio_label(track, i)
         if track.get("codec_name") == "aac" and track.get("profile") == "LC":
             has_aac = True
-            res += [f"""
+            res += [
+                f"""
     -map 0:a:{i}
         -c:a:{o} copy
         -metadata:s:a:{o} title='{title}'
-    """]
+    """
+            ]
             o += 1
             if env["output"] == "direct":
                 res += [output_audio(env, "aac")]
@@ -969,11 +1044,13 @@ def transcode_audio(env, probed):
 
         if track.get("codec_name") == "opus":
             has_opus = True
-            res += [f"""
+            res += [
+                f"""
     -map 0:a:{i}
         -c:a:{o} copy
         -metadata:s:a:{o} title='{title}'
-    """]
+    """
+            ]
             o += 1
             if env["output"] == "direct":
                 res += [output_audio(env, "opus")]
@@ -981,22 +1058,26 @@ def transcode_audio(env, probed):
 
         rate = min(int(track.get("sample_rate", "48000")), 48000)
         if not has_aac:
-            res += [f"""
+            res += [
+                f"""
     -map 0:a:{i}
         -c:a:{o} aac -b:a:{o} 256k -ar:a:{o} {rate}
         -metadata:s:a:{o} title='{title}'
-    """]
+    """
+            ]
             o += 1
             if env["output"] == "direct":
                 res += [output_audio(env, "aac")]
                 o = 0
 
         if not has_opus:
-            res += [f"""
+            res += [
+                f"""
     -map 0:a:{i}
         -c:a:{o} libopus -b:a:{o} 192k -ar:a:{o} {rate}
         -metadata:s:a:{o} title='{title}'
-    """]
+    """
+            ]
             o += 1
             if env["output"] == "direct":
                 res += [output_audio(env, "opus")]
