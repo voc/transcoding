@@ -1,6 +1,5 @@
 import json
 import threading
-import paho.mqtt.client as mqtt
 import config
 
 class Client():
@@ -9,6 +8,7 @@ class Client():
         self.enable = enable
         if not enable:
             return
+        import paho.mqtt.client as mqtt
         self.client = mqtt.Client()
         self.client.enable_logger()
         self.client.tls_set(ca_certs=config.mqtt_certs)
