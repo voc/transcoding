@@ -1,30 +1,33 @@
 import json
-import threading
 import config
+import threading
+import paho.mqtt.client as mqtt
 
-class Client():
+
+class Client:
     """MQTT client as context manager"""
-    def __init__(self, enable=True):
-        self.enable = enable
-        if not enable:
+
+    def __init__(self, config: config.MqttConfig):
+        self.config = config
+        if not self.config.enabled:
             return
-        import paho.mqtt.client as mqtt
+
         self.client = mqtt.Client()
         self.client.enable_logger()
-        self.client.tls_set(ca_certs=config.mqtt_certs)
-        self.client.username_pw_set(config.mqtt_user, config.mqtt_pass)
+        self.client.tls_set(ca_certs=self.config.certs)
+        self.client.username_pw_set(self.config.user, self.config.password)
         self.mid = None
         self.cv = threading.Condition()
         self.client.on_publish = self.__handle_publish
 
     def __enter__(self):
-        if self.enable:
-            self.client.connect(config.mqtt_broker, port=config.mqtt_port)
+        if self.config.enabled:
+            self.client.connect(self.config.broker, port=self.config.port)
             self.client.loop_start()
         return self
 
     def __exit__(self, type, value, traceback):
-        if self.enable:
+        if self.config.enabled:
             self.client.loop_stop()
             self.client.disconnect()
 
@@ -39,7 +42,7 @@ class Client():
         """
         msg = {
             "level": level,
-            "component": "transcoding/" + config.mqtt_host,
+            "component": "transcoding/" + self.config.host,
             "msg": msg,
         }
         payload = json.dumps(msg)
@@ -55,5 +58,5 @@ class Client():
 
     def info(self, msg):
         print(msg)
-        if self.enable:
+        if self.config.enabled:
             self.__publish(msg, level="info")

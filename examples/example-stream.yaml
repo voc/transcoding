@@ -1,0 +1,6 @@
+stream_key: foo
+format: mpegts
+output: direct
+type: h264-only
+transcoding_source: srt://ingest.c3voc.de:1337?streamid=play/q1
+transcoding_sink: localhost:8081

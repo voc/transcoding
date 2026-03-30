@@ -14,25 +14,11 @@ import config
 
 
 def main():
-    env = dict()
-    env["stream"] = os.getenv("stream_key")
-    env["source"] = os.getenv("transcoding_source")
-    env["sink"] = os.getenv("transcoding_sink")
-    env["type"] = os.getenv("type", "all")
-    env["output"] = os.getenv("output")
-    env["passthrough"] = os.getenv("passthrough", "no") == "yes"
-    env["restream"] = os.getenv("restream", "none")
-    env["framerate"] = os.getenv("framerate", 25)
-    env["vaapi_dev"], env["vaapi_driver"], env["vaapi_features"] = select_vaapi_dev()
-    # env["icecast_password"] = config.icecast_password
-    if hasattr(config, "upload_user"):
-        env["upload_user"] = config.upload_user
-    if hasattr(config, "upload_pass"):
-        env["upload_pass"] = config.upload_pass
-    if hasattr(config, "sink"):
-        env["sink"] = config.sink
-
     parser = argparse.ArgumentParser(description="Transcode voc stream")
+    parser.add_argument(
+        "--config", help="config file", default="/etc/voc-transcode/config.yaml"
+    )
+    parser.add_argument("--streamconf", help="stream config")
     parser.add_argument("--stream", help="stream key")
     parser.add_argument("--source", help="transcoding input")
     parser.add_argument("--sink", help="transcoding sink host")
@@ -51,25 +37,34 @@ def main():
     )
     args = parser.parse_args()
 
+    # load config file
+    conf = config.TranscodeConfig(args.config)
+
+    # load stream config
+    env = dict()
+    config.load_stream_config(env, args.streamconf)
+
+    # dump some config into env for templating
+    env["upload_user"] = conf.upload.user
+    env["upload_pass"] = conf.upload.password
+    env["sink"] = conf.upload.sink
+    env["icecast_password"] = conf.icecast_password
+
+    # detect vaapi features
+    env["vaapi_dev"], env["vaapi_driver"], env["vaapi_features"] = select_vaapi_dev()
+
     # override environment with arguments
-    enable_mqtt = False
-    if hasattr(config, "mqtt_enabled"):
-        enable_mqtt = config.mqtt_enabled
-    check_arg(env, "output", args.output)
+    arg_override(env, "output", args.output)
     if env["output"] == "null":
-        enable_mqtt = False
+        conf.mqtt.enabled = False
         env["stream"] = ""
         env["sink"] = ""
-    check_arg(env, "stream", args.stream)
-    check_arg(env, "source", args.source)
-    check_arg(env, "sink", args.sink)
-    check_arg(env, "type", args.type)
-
-    # handle external ffmpeg-progress
-    progress = ""
+    arg_override(env, "stream", args.stream)
+    arg_override(env, "source", args.source)
+    arg_override(env, "sink", args.sink)
+    arg_override(env, "type", args.type)
     if args.progress is not None:
-        print("using progress", args.progress)
-        progress = f"-progress {args.progress}"
+        conf.progress = args.progress
 
     # override vaapi variables
     if args.vaapi_device is not None:
@@ -84,19 +79,19 @@ def main():
     env_vars = {"LIBVA_DRIVER_NAME": env["vaapi_driver"]}
     os.environ.update(env_vars)
 
-    with mqtt.Client(enable_mqtt) as client:
+    with mqtt.Client(conf.mqtt) as client:
         client.info(
             f"Transcoding for {env['stream']}%sstarted…"
             % (" (passthrough) " if env["passthrough"] else " ")
         )
         try:
-            mainloop(env, args.restart, progress, args.verbose)
+            mainloop(env, args.restart, conf.progress, args.verbose)
         except ExitException:
             pass
         client.info(f"Transcoding for {env['stream']} stopped…")
 
 
-def check_arg(env, key, flag):
+def arg_override(env, key, flag):
     """Selectively overwrite environment variables if flag is set"""
     if flag is not None:
         env[key] = flag
@@ -178,7 +173,7 @@ def join_all(L):
     )
 
 
-def mainloop(env, do_restart, progress="", verbosity="warning"):
+def mainloop(env, do_restart, progress_url="", verbosity="warning"):
     """
     Runs ffmpeg in a loop with
     """
@@ -189,6 +184,11 @@ def mainloop(env, do_restart, progress="", verbosity="warning"):
     signal.signal(signal.SIGINT, signal_handler)
     signal.signal(signal.SIGTERM, signal_handler)
     signal.signal(signal.SIGQUIT, signal_handler)
+
+    progress = ""
+    if progress_url:
+        print("using progress", progress_url)
+        progress = f"-progress {progress_url}"
 
     # run ffmpeg
     while True:
@@ -444,7 +444,7 @@ def output_matroska(env, slug):
     -fflags +genpts
     -max_muxing_queue_size 2000
     -f matroska
-    -password {config.icecast_password}
+    -password {env["icecast_password"]}
     -content_type video/webm
     "icecast://{env["sink"]}/{slug}"
 """
@@ -1010,7 +1010,7 @@ def output_audio(env, codec):
         fmt = "adts"
     return f"""
     -f {fmt}
-        -password {config.icecast_password}
+        -password {env["icecast_password"]}
         -content_type {content_type}
         "icecast://{env["sink"]}/{stream}.{ext}"
     """

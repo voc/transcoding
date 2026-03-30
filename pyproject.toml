@@ -1,0 +1,21 @@
+[project]
+name = "voc-transcode"
+version = "1.0.0"
+dependencies = [
+    "paho-mqtt>2",
+    "pystemd",
+    "py-consul",
+    "pyyaml",
+    "tomlkit>=0.14.0",
+]
+
+[project.scripts]
+voc-transcode = "voc-transcode:transcode"
+transcode-control = "voc-transcode:transcode-control"
+
+[build-system]
+requires = ["hatchling >= 1.26"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["voc-transcode"]
