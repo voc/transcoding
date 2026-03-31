@@ -6,7 +6,6 @@ dependencies = [
     "pystemd",
     "py-consul",
     "pyyaml",
-    "tomlkit>=0.14.0",
 ]
 
 [project.scripts]
